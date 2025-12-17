@@ -98,11 +98,16 @@ Developed by **Ankit Kumar** with the help of LLM.
 
 ```text
 bihar-risk-atlas/
-├── backend/
+├── frontend/
 │   └── app.py                  # Main Dashboard Application
 ├── data/
 │   └── final_risk_atlas_bihar.geojson  # The processed geospatial database
+├── gee_scripts/
+│   └── extraction_script.js    # Raw Google Earth Engine (JS) code
 ├── notebooks/
-│   ├── 01_gee_extraction.ipynb         # Google Earth Engine scripts
-│   ├── 02_ml_modeling.ipynb            # Random Forest & SHAP analysis
-
+│   ├── 01_prepare_boundaries.ipynb     # Pre-processing administrative maps
+│   └── 03_merge_features.ipynb         # Data fusion and risk calculation
+├── .gitignore                  # Files to exclude from Git
+├── LICENSE                     # MIT License
+├── README.md                   # Project Documentation
+└── requirements.txt            # Python dependencies for deployment
