@@ -6,37 +6,45 @@ import os
 import pandas as pd
 import plotly.express as px
 
-# 1. Page Config with Custom CSS for Styling
+# 1. Page Config
 st.set_page_config(layout="wide", page_title="Bihar Risk Atlas", page_icon="🌊")
 
+# 2. Enhanced Styling
 st.markdown("""
     <style>
-    /* Main Background and Typography */
-    .stApp { background-color: #f8f9fa; }
-    h1, h2, h3 { color: #1e3a8a; font-family: 'Inter', sans-serif; font-weight: 800; }
+    .stApp { background-color: #f0f2f6; }
+    h1, h2, h3 { color: #0f172a; font-family: 'Segoe UI', sans-serif; }
     
-    /* Custom Card Styling */
+    /* Card Styling */
     .metric-card {
         background: white;
-        padding: 20px;
-        border-radius: 12px;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-        border-left: 5px solid #1e3a8a;
-        margin-bottom: 10px;
+        padding: 1.5rem;
+        border-radius: 1rem;
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        border-top: 4px solid #1e3a8a;
+        text-align: center;
     }
     
-    /* Sidebar Styling */
-    section[data-testid="stSidebar"] {
-        background-color: #1e3a8a !important;
+    /* Custom Sidebar */
+    [data-testid="stSidebar"] {
+        background-image: linear-gradient(#1e3a8a, #1e40af);
         color: white;
     }
-    section[data-testid="stSidebar"] .stMarkdown, section[data-testid="stSidebar"] h2 {
-        color: white !important;
+    
+    /* Glassmorphism Footer */
+    .footer {
+        background: rgba(255, 255, 255, 0.2);
+        backdrop-filter: blur(10px);
+        padding: 10px;
+        border-radius: 10px;
+        text-align: center;
+        color: #64748b;
+        font-size: 0.8rem;
     }
     </style>
     """, unsafe_allow_html=True)
 
-# --- LOAD DATA (Keep your robust logic) ---
+# --- LOAD DATA ---
 @st.cache_data
 def load_data():
     base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -51,13 +59,15 @@ def load_data():
         "stress_slope": "Degradation_Rate", "block": "block_name"
     }
     gdf = gdf.rename(columns=rename_map)
+    
+    # Force lat/lon projection
     if gdf.crs is None or gdf.crs != "EPSG:4326":
         gdf = gdf.to_crs(epsg=4326)
     return gdf
 
 gdf = load_data()
 
-# --- COLOR LOGIC (Enhanced Palette) ---
+# --- COLOR LOGIC ---
 def get_color(feature, layer_type):
     if layer_type == 'risk':
         val = feature['properties'].get('Risk_Category', 'Low')
@@ -65,99 +75,111 @@ def get_color(feature, layer_type):
     
     val = feature['properties'].get(layer_type, 0)
     if pd.isna(val): return '#9ca3af'
-    if val > 0.7: return '#7f1d1d' 
-    if val > 0.4: return '#f59e0b'
-    return '#10b981'
+    return '#7f1d1d' if val > 0.7 else '#f59e0b' if val > 0.4 else '#10b981'
 
-# --- UI COMPONENTS ---
+# --- SIDEBAR ---
 with st.sidebar:
-    st.image("https://img.icons8.com/fluency/96/water-unbalanced.png", width=80)
-    st.title("Atlas Controls")
-    selected_block = st.selectbox("Search Territory", ["Bihar State View"] + sorted(gdf["block_name"].unique().tolist()))
+    st.image("https://img.icons8.com/fluency/96/water-unbalanced.png", width=60)
+    st.title("Atlas Navigator")
+    selected_block = st.selectbox("Search District/Block", ["Bihar State View"] + sorted(gdf["block_name"].unique().tolist()))
     
-    st.markdown("---")
-    st.subheader("📊 Statistics")
+    st.divider()
+    st.subheader("State Vitality")
     st.metric("Blocks Analyzed", len(gdf))
     criticals = len(gdf[gdf["Risk_Category"] == "Critical"])
-    st.metric("Critical Zones", criticals, delta=f"{(criticals/len(gdf)*100):.1f}%", delta_color="inverse")
+    st.metric("Critical Hotspots", criticals, delta=f"{(criticals/len(gdf)*100):.1f}%", delta_color="inverse")
 
 # --- MAIN DASHBOARD ---
-st.title("🌊 Hydro-Climatic Risk Atlas: Bihar")
-st.caption("Real-time composite monitoring of groundwater stress and surface flood pressure.")
+st.title("🌊 Bihar Hydro-Climatic Risk Atlas")
 
-col_map, col_stats = st.columns([2.2, 1])
+col_map, col_stats = st.columns([2.5, 1])
 
 with col_map:
-    # Set Map Center
+    # 1. Map Control Logic
     m_center = [25.8, 85.5]
-    m_zoom = 7.2
+    m_zoom = 7
     if selected_block != "Bihar State View":
-        target = gdf[gdf["block_name"] == selected_block].geometry.centroid.iloc[0]
-        m_center, m_zoom = [target.y, target.x], 10
+        centroid = gdf[gdf["block_name"] == selected_block].geometry.centroid.iloc[0]
+        m_center, m_zoom = [centroid.y, centroid.x], 10
 
-    m = folium.Map(location=m_center, zoom_start=m_zoom, tiles="CartoDB positron", zoom_control=False)
+    m = folium.Map(location=m_center, zoom_start=m_zoom, tiles="CartoDB positron", zoom_control=True)
     
-    # Stylized Layers
-    for name, key, show in [("Risk Category", "risk", True), ("Flood Pressure", "Flood_Risk_Score", False), ("GW Stress", "GW_Stress_Score", False)]:
+    # 2. Add Layers
+    layers = [("Risk Category", "risk", True), ("Flood Pressure", "Flood_Risk_Score", False), ("GW Stress", "GW_Stress_Score", False)]
+    for name, key, show in layers:
         folium.GeoJson(
             gdf,
             name=name,
             show=show,
             style_function=lambda x, k=key: {
                 'fillColor': get_color(x, k),
-                'color': 'white', 'weight': 1, 'fillOpacity': 0.7
+                'color': 'white', 'weight': 0.8, 'fillOpacity': 0.7
             },
-            tooltip=folium.GeoJsonTooltip(fields=['block_name', 'Risk_Category'], aliases=['Block', 'Risk Status'])
+            tooltip=folium.GeoJsonTooltip(fields=['block_name', 'Risk_Category'], aliases=['Block:', 'Status:'])
         ).add_to(m)
 
     folium.LayerControl(position='topright', collapsed=False).add_to(m)
-    st_folium(m, width="100%", height=650, key="main_atlas")
+    
+    # 3. RENDER MAP (With fixed key to prevent flickering)
+    st_folium(m, width="100%", height=600, key=f"map_{selected_block}")
 
 with col_stats:
     if selected_block != "Bihar State View":
         data = gdf[gdf["block_name"] == selected_block].iloc[0]
         
-        # Stylized Header
+        # Banner
         risk_color = get_color({'properties': data.to_dict()}, 'risk')
         st.markdown(f"""
-            <div style="background:{risk_color}; padding:20px; border-radius:15px; color:white; margin-bottom:20px">
+            <div style="background:{risk_color}; padding:20px; border-radius:15px; color:white; text-align:center;">
                 <h2 style="color:white; margin:0">{data['block_name']}</h2>
-                <p style="margin:0; opacity:0.9; font-weight:bold">{data['Risk_Category'].upper()} RISK ZONE</p>
+                <small>{data['Risk_Category'].upper()} PRIORITY</small>
             </div>
         """, unsafe_allow_html=True)
         
-        # Metrics Cards
-        m1, m2 = st.columns(2)
-        with m1:
-            st.markdown(f'<div class="metric-card"><strong>Flood</strong><br><span style="font-size:24px">{data["Flood_Risk_Score"]:.2f}</span></div>', unsafe_allow_html=True)
-        with m2:
-            st.markdown(f'<div class="metric-card"><strong>GW Stress</strong><br><span style="font-size:24px">{data["GW_Stress_Score"]:.2f}</span></div>', unsafe_allow_html=True)
+        # Grid Metrics
+        st.write("")
+        c1, c2 = st.columns(2)
+        c1.markdown(f'<div class="metric-card"><small>Flood</small><br><b>{data["Flood_Risk_Score"]:.2f}</b></div>', unsafe_allow_html=True)
+        c2.markdown(f'<div class="metric-card"><small>GW Stress</small><br><b>{data["GW_Stress_Score"]:.2f}</b></div>', unsafe_allow_html=True)
         
-        # Trend Graph with stylish theme
+        # Trend
         st.markdown("### 📈 Risk Trajectory")
         years = [2021, 2022, 2023, 2024, 2025]
         scores = [data['Compound_Score'] - (data['Degradation_Rate'] * (2025-y)) for y in years]
-        df_trend = pd.DataFrame({"Year": years, "Score": scores})
-        
-        fig = px.line(df_trend, x="Year", y="Score", template="plotly_white", markers=True)
+        fig = px.line(x=years, y=scores, template="plotly_white", markers=True)
         fig.update_traces(line_color=risk_color, line_width=4)
-        fig.update_layout(height=250, margin=dict(l=0,r=0,t=10,b=0), xaxis_showgrid=False, yaxis_showgrid=False)
+        fig.update_layout(height=230, margin=dict(l=0,r=0,t=10,b=0))
         st.plotly_chart(fig, use_container_width=True)
 
-        # Download
         csv = pd.DataFrame([data.drop('geometry')]).to_csv(index=False).encode('utf-8')
-        st.download_button("📥 Export Technical Report", csv, f"{data['block_name']}_report.csv", "text/csv", use_container_width=True)
-        
+        st.download_button("📥 Export CSV", csv, f"{data['block_name']}.csv", use_container_width=True)
     else:
-        st.markdown("### 🗺️ State Overview")
-        st.info("Select a specific block on the map or search bar to view temporal trends and local vulnerability scores.")
-        
-        # Stylish Pie Chart
-        fig_pie = px.pie(gdf, names='Risk_Category', hole=0.6,
+        st.markdown("### 🗺️ State Profile")
+        fig_pie = px.pie(gdf, names='Risk_Category', hole=0.5,
                          color='Risk_Category',
                          color_discrete_map={'Critical': '#991b1b', 'High': '#d97706', 'Moderate': '#fcd34d', 'Low': '#059669'})
-        fig_pie.update_layout(showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=-0.2), height=400, margin=dict(t=0,b=0,l=0,r=0))
+        fig_pie.update_layout(margin=dict(t=0,b=0,l=0,r=0), height=350, showlegend=True)
         st.plotly_chart(fig_pie, use_container_width=True)
 
-st.markdown("---")
-st.caption("Data Source: Hydro-Climatic Research Division | Updated: 2025")
+# --- 4. DATA EXPLORER TABLE ---
+st.markdown("### 🔎 Regional Comparison Table")
+search_query = st.text_input("Quick Search Blocks...", placeholder="e.g. Patna")
+table_df = gdf.drop(columns='geometry')
+if search_query:
+    table_df = table_df[table_df['block_name'].str.contains(search_query, case=False)]
+
+st.dataframe(
+    table_df.sort_values("Compound_Score", ascending=False),
+    column_config={
+        "Compound_Score": st.column_config.ProgressColumn("Risk Intensity", min_value=0, max_value=1),
+        "Risk_Category": "Classification"
+    },
+    use_container_width=True,
+    hide_index=True
+)
+
+st.markdown("""
+    <div class="footer">
+        Bihar Hydro-Climatic Risk Atlas © 2025 | Data provided by Water Resources Dept.
+    </div>
+""", unsafe_allow_html=True)
